@@ -2,11 +2,26 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 )
+
+func testRequest(t *testing.T, ts *httptest.Server, method,
+	path string, body io.Reader) *http.Response {
+	req, err := http.NewRequest(method, ts.URL+path, body)
+	fmt.Println(ts.URL + path) //
+	assert.NoError(t, err)
+
+	resp, err := ts.Client().Do(req)
+	assert.NoError(t, err)
+
+	return resp
+}
 
 func TestHandlers(t *testing.T) {
 
@@ -34,25 +49,25 @@ func TestHandlers(t *testing.T) {
 		{
 			name: "Correct test 1",
 			mapURL: map[string]string{
-				"/api": "https://practicum.net",
+				"sharaga": "https://mai.ru",
 			},
-			inputPath:   "/api",
+			inputPath:   "/sharaga",
 			methodInput: "GET",
 			want: want{
 				code:     307,
-				location: "https://practicum.net",
+				location: "https://mai.ru",
 			},
 		},
 		{
 			name: "Incorrect test 1",
 			mapURL: map[string]string{
-				"/api": "https://practicum.net",
+				"api": "https://practicum.net",
 			},
 			inputPath:   "/test",
 			methodInput: "GET",
 			want: want{
 				code:     400,
-				location: "", // ???
+				location: "",
 			},
 		},
 	}
@@ -79,17 +94,14 @@ func TestHandlers(t *testing.T) {
 	// Get handler test
 	for _, tt := range testGet {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.methodInput, tt.inputPath, nil)
-			res := httptest.NewRecorder()
 
-			h := setEndPoint(tt.mapURL)
-			h(res, req)
+			testConnect := &Connection{tt.mapURL}
+			ts := httptest.NewServer(LaunchMyRouter(testConnect))
+			res := testRequest(t, ts, tt.methodInput, tt.inputPath, nil)
 
-			ans := res.Result()
-			require.Equal(t, res.Code, tt.want.code)
-			require.Equal(t, ans.Header.Get("Location"), tt.want.location)
+			assert.Equal(t, tt.want.code, res.StatusCode)                 // Получаем код ответа
+			assert.Equal(t, tt.want.location, res.Header.Get("Location")) // Получаем заголовок "Location"
 
-			ans.Body.Close()
 		})
 	}
 
@@ -97,18 +109,14 @@ func TestHandlers(t *testing.T) {
 	for _, tt := range testPost {
 		t.Run(tt.name, func(t *testing.T) {
 			newBuffer := bytes.NewBuffer([]byte(tt.bodyInput))
-			require.NotEmpty(t, newBuffer) // original URL mustn't be empty
+			assert.NotEmpty(t, newBuffer) // original URL mustn't be empty
 
-			req := httptest.NewRequest(tt.methodInput, tt.inputPath, newBuffer)
-			res := httptest.NewRecorder()
+			testConnect := &Connection{tt.mapURL}
+			ts := httptest.NewServer(LaunchMyRouter(testConnect))
+			res := testRequest(t, ts, tt.methodInput, tt.inputPath, newBuffer)
 
-			h := setEndPoint(tt.mapURL)
-			h(res, req)
+			assert.Equal(t, tt.want, res.StatusCode)
 
-			ans := res.Result()
-			require.Equal(t, res.Code, tt.want)
-
-			ans.Body.Close()
 		})
 	}
 }

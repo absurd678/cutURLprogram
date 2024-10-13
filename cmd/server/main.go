@@ -6,14 +6,22 @@ import (
 	"net/http"
 	"regexp"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 )
 
 var validPathget = regexp.MustCompile("^/([a-zA-Z0-9]+)$")
 var validPathpost = regexp.MustCompile("^/$")
-var mapURLmain = map[string]string{}
+var mapURLmain = map[string]string{
+	"sharaga": "https://mai.ru",
+}
 
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
 const shortURLsize int = 10
+
+type Connection struct {
+	mapURL map[string]string
+}
 
 // RandString генерирует случайную строку длины n
 func RandString(n int) string {
@@ -25,30 +33,22 @@ func RandString(n int) string {
 	return string(b)
 }
 
-func GetHandler(res http.ResponseWriter, req *http.Request, mapURL map[string]string) {
-	if m := validPathget.FindStringSubmatch(req.URL.Path); m == nil {
-		http.Error(res, "Invalid URL for get", http.StatusBadRequest)
-		return
-	}
+func (c *Connection) GetHandler(res http.ResponseWriter, req *http.Request) {
 	// take {id} and search for value in the map
-	shortURL := req.URL.Path
-	original, ok := mapURL[shortURL]
+	shortURL := chi.URLParam(req, "id")
+	original, ok := c.mapURL[shortURL]
 	if !ok {
 		http.Error(res, "Invalid URL for get", http.StatusBadRequest)
+		return
 	}
 
 	// Add the Location header with original URL
-	res.Header().Add("Location", original)
 	res.WriteHeader(http.StatusTemporaryRedirect)
+	res.Header().Add("Location", original) // No location actually sent. However the header is added.
+
 }
 
-// TODO: return back random URL keys
-func PostHandler(res http.ResponseWriter, req *http.Request, mapURL map[string]string) {
-	if m := validPathpost.FindStringSubmatch(req.URL.Path); m == nil {
-		http.Error(res, "Invalid URL for post", http.StatusBadRequest)
-		return
-	}
-
+func (c *Connection) PostHandler(res http.ResponseWriter, req *http.Request) {
 	// Get the URL from the body (and the new id also)
 	original, err := io.ReadAll(req.Body)
 	if err != nil {
@@ -59,30 +59,36 @@ func PostHandler(res http.ResponseWriter, req *http.Request, mapURL map[string]s
 	// Generate the shortened URL
 	newURL := RandString(shortURLsize)
 	res.WriteHeader(http.StatusCreated)
-	mapURL["/"+newURL] = string(original)
+	c.mapURL[newURL] = string(original)
 
 	// Body answer: localhost:8080/{id}
 	res.Write([]byte(req.URL.Path + "/" + newURL))
 }
 
-func setEndPoint(mapURL map[string]string) func(res http.ResponseWriter, req *http.Request) {
-	return func(res http.ResponseWriter, req *http.Request) {
-		switch req.Method {
-		case http.MethodGet:
-			GetHandler(res, req, mapURL)
-		case http.MethodPost:
-			PostHandler(res, req, mapURL)
-		default:
-			http.Error(res, "Method not allowed", http.StatusMethodNotAllowed)
+func checkURL(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodGet && regexp.MustCompile(`^/[a-zA-Z0-9-]+$`).MatchString(req.URL.Path) {
+			next.ServeHTTP(res, req)
+		} else if req.Method == http.MethodPost && req.URL.Path == "/" {
+			next.ServeHTTP(res, req)
+		} else {
+			http.Error(res, "Invalid URL", http.StatusBadRequest)
 		}
-	}
+	})
+}
+
+func LaunchMyRouter(c *Connection) chi.Router {
+	myRouter := chi.NewRouter()
+	myRouter.Use(checkURL)
+	myRouter.Get("/{id}", c.GetHandler)
+	myRouter.Post("/", c.PostHandler)
+
+	return myRouter
 }
 
 func main() {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", setEndPoint(mapURLmain))
-
-	err := http.ListenAndServe(`:8080`, mux)
+	c := &Connection{mapURLmain}
+	err := http.ListenAndServe(`:8080`, LaunchMyRouter(c))
 	if err != nil {
 		panic(err)
 	}
