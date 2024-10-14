@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"regexp"
@@ -10,8 +11,6 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-var validPathget = regexp.MustCompile("^/([a-zA-Z0-9]+)$")
-var validPathpost = regexp.MustCompile("^/$")
 var mapURLmain = map[string]string{
 	"sharaga": "https://mai.ru",
 }
@@ -43,9 +42,9 @@ func (c *Connection) GetHandler(res http.ResponseWriter, req *http.Request) {
 	}
 
 	// Add the Location header with original URL
-	res.WriteHeader(http.StatusTemporaryRedirect)
 	res.Header().Add("Location", original) // No location actually sent. However the header is added.
-
+	res.WriteHeader(http.StatusTemporaryRedirect)
+	res.Write([]byte(""))
 }
 
 func (c *Connection) PostHandler(res http.ResponseWriter, req *http.Request) {
@@ -67,6 +66,7 @@ func (c *Connection) PostHandler(res http.ResponseWriter, req *http.Request) {
 
 func checkURL(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		log.Println(req.URL.Path)
 		if req.Method == http.MethodGet && regexp.MustCompile(`^/[a-zA-Z0-9-]+$`).MatchString(req.URL.Path) {
 			next.ServeHTTP(res, req)
 		} else if req.Method == http.MethodPost && req.URL.Path == "/" {

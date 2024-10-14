@@ -25,7 +25,8 @@ func main() {
 		long = strings.TrimSuffix(long, "\n")
 		// заполняем контейнер данными
 		data.Set("url", long)
-		// добавляем HTTP-клиент*/
+		// добавляем HTTP-клиент
+	*/
 	client := &http.Client{}
 	/*// пишем запрос
 	// запрос методом POST должен, помимо заголовков, содержать тело
@@ -69,13 +70,12 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	// в заголовках запроса указываем кодировку
-	//request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	// отправляем запрос и получаем ответ
+
 	response, err := client.Do(request)
 	if err != nil {
 		panic(err)
 	}
+	defer response.Body.Close()
 	// выводим код ответа
 	fmt.Println("Статус-код ", response.Status)
 	fmt.Println("Location: ", response.Header.Get("Location"))
