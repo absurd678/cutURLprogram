@@ -2,121 +2,129 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func testRequest(t *testing.T, ts *httptest.Server, method,
-	path string, body io.Reader) *http.Response {
-	req, err := http.NewRequest(method, ts.URL+path, body)
-	fmt.Println(ts.URL + path) //
-	assert.NoError(t, err)
+type testRequestOptions struct {
+	t            *testing.T
+	ts           *httptest.Server
+	method, path string
+	body         io.Reader
+}
 
-	resp, err := ts.Client().Do(req)
-	assert.NoError(t, err)
-
+func testRequest(opts testRequestOptions) *http.Response {
+	req, err := http.NewRequest(
+		opts.method,
+		opts.ts.URL+opts.path,
+		opts.body,
+	)
+	require.NoError(opts.t, err)
+	opts.ts.Client().CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := opts.ts.Client().Do(req)
+	require.NoError(opts.t, err)
 	return resp
 }
 
-func TestHandlers(t *testing.T) {
+// Я знаю, ты не просил, но я вставлю 5 копеек, сори :D
+// Этот тест выглядит хорошо, но я бы разделил его на 2: Test_GetHandler, Test_PostHandler (Test_<funcname>)
+// Дело в том, что unit-тест тестирует 1 unit, то есть одну функцию, пусть даже и часть кода будет повторяться.
+// Челу, который будет это потом читать будет намного проще понять, какой функционал ты тестируешь и что ты имеешь ввиду)
 
-	type want struct {
-		code     int
-		location string
-	}
-	type testsGetStruct struct {
-		name        string
-		mapURL      map[string]string
-		inputPath   string
-		methodInput string // Delete method no much need
-		want        want
-	}
-	type testsPostStruct struct {
-		name        string
-		mapURL      map[string]string
-		inputPath   string
-		methodInput string
-		bodyInput   string
-		want        int // just answer code
-	}
-
-	testGet := []testsGetStruct{
+// Я бы сделал это как-то так:
+func Test_GetHandler(t *testing.T) {
+	tests := []struct {
+		Name         string
+		MapURL       map[string]string
+		Path         string
+		Method       string // Delete method no much need
+		WantCode     int
+		WantLocation string
+	}{
 		{
-			name: "Correct test 1",
-			mapURL: map[string]string{
+			Name: "OK",
+			MapURL: map[string]string{
 				"sharaga": "https://mai.ru",
 			},
-			inputPath:   "/sharaga",
-			methodInput: "GET",
-			want: want{
-				code:     307,
-				location: "https://mai.ru",
-			},
+			Path:         "/sharaga",
+			Method:       http.MethodGet,
+			WantCode:     307,
+			WantLocation: "https://mai.ru",
 		},
 		{
-			name: "Incorrect test 1",
-			mapURL: map[string]string{
+			Name: "Requested url not in map", // Test name need to be more informative
+			MapURL: map[string]string{
 				"api": "https://practicum.net",
 			},
-			inputPath:   "/test",
-			methodInput: "GET",
-			want: want{
-				code:     400,
-				location: "",
-			},
+			Path:     "/test",
+			Method:   http.MethodGet,
+			WantCode: 400,
 		},
 	}
-
-	testPost := []testsPostStruct{
-		{
-			name:        "Correct test 1",
-			mapURL:      map[string]string{},
-			inputPath:   "/",
-			methodInput: "POST",
-			bodyInput:   "https://practicum.net",
-			want:        201,
-		},
-		{
-			name:        "Incorrect test 1",
-			mapURL:      map[string]string{},
-			inputPath:   "/unneededID",
-			methodInput: "POST",
-			bodyInput:   "https://practicum.net",
-			want:        400,
-		},
-	}
-
-	// Get handler test
-	for _, tt := range testGet {
-		t.Run(tt.name, func(t *testing.T) {
-
-			testConnect := &Connection{tt.mapURL}
-			ts := httptest.NewServer(LaunchMyRouter(testConnect))
-			res := testRequest(t, ts, tt.methodInput, tt.inputPath, nil)
-
-			assert.Equal(t, tt.want.code, res.StatusCode)                 // Получаем код ответа
-			assert.Equal(t, tt.want.location, res.Header.Get("Location")) // Получаем заголовок "Location"
-
+	for _, tc := range tests {
+		t.Run(tc.Name, func(t *testing.T) {
+			connection := &Connection{tc.MapURL}
+			ts := httptest.NewServer(LaunchMyRouter(connection))
+			resp := testRequest(testRequestOptions{
+				t:      t,
+				ts:     ts,
+				method: tc.Method,
+				path:   tc.Path,
+				body:   nil,
+			})
+			assert.Equal(t, tc.WantCode, resp.StatusCode)
+			assert.Equal(t, tc.WantLocation, resp.Header.Get("Location"))
 		})
 	}
+}
 
-	// Post handler test
-	for _, tt := range testPost {
-		t.Run(tt.name, func(t *testing.T) {
-			newBuffer := bytes.NewBuffer([]byte(tt.bodyInput))
+func Test_PostHandler(t *testing.T) {
+	tests := []struct {
+		Name     string
+		MapURL   map[string]string
+		Path     string
+		Method   string
+		Body     string
+		WantCode int
+	}{
+		{
+			Name:     "OK",
+			MapURL:   map[string]string{},
+			Path:     "/",
+			Method:   http.MethodPost,
+			Body:     "https://practicum.net",
+			WantCode: 201,
+		},
+		{
+			Name:     "Bad request", // Test name need to be more informative
+			MapURL:   map[string]string{},
+			Path:     "/unneededID",
+			Method:   http.MethodPost,
+			Body:     "https://practicum.net",
+			WantCode: 400,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.Name, func(t *testing.T) {
+			newBuffer := bytes.NewBuffer([]byte(tc.Body))
 			assert.NotEmpty(t, newBuffer) // original URL mustn't be empty
-
-			testConnect := &Connection{tt.mapURL}
+			testConnect := &Connection{tc.MapURL}
 			ts := httptest.NewServer(LaunchMyRouter(testConnect))
-			res := testRequest(t, ts, tt.methodInput, tt.inputPath, newBuffer)
-
-			assert.Equal(t, tt.want, res.StatusCode)
-
+			resp := testRequest(testRequestOptions{
+				t:      t,
+				ts:     ts,
+				method: tc.Method,
+				path:   tc.Path,
+				body:   newBuffer,
+			})
+			assert.Equal(t, tc.WantCode, resp.StatusCode)
 		})
 	}
 }

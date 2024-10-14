@@ -28,6 +28,10 @@ func main() {
 		// добавляем HTTP-клиент
 	*/
 	client := &http.Client{}
+	// If CheckRedirect is nil, the Client uses its default policy, which is to stop after 10 consecutive requests.
+	// As a special case, if CheckRedirect returns ErrUseLastResponse,
+	// then the most recent response is returned with its body unclosed, along with a nil error.
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }
 	/*// пишем запрос
 	// запрос методом POST должен, помимо заголовков, содержать тело
 	// тело должно быть источником потокового чтения io.Reader
@@ -76,6 +80,7 @@ func main() {
 		panic(err)
 	}
 	defer response.Body.Close()
+
 	// выводим код ответа
 	fmt.Println("Статус-код ", response.Status)
 	fmt.Println("Location: ", response.Header.Get("Location"))
