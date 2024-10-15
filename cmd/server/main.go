@@ -24,10 +24,11 @@ type Connection struct {
 
 // RandString генерирует случайную строку длины n
 func RandString(n int) string {
-	rand.Seed(time.Now().UnixNano()) // Инициализируем случайный генератор
+	// rand.Seed is deprecated, use NewSource instead :D
+	r := rand.New(rand.NewSource(time.Now().Unix()))
 	b := make([]byte, n)
 	for i := range b {
-		b[i] = letterBytes[rand.Intn(len(letterBytes))]
+		b[i] = letterBytes[r.Intn(len(letterBytes))]
 	}
 	return string(b)
 }
