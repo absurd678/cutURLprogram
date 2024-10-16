@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/absurd678/skill/cmd/config"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -55,14 +56,11 @@ func (c *Connection) PostHandler(res http.ResponseWriter, req *http.Request) {
 		http.Error(res, "Error reading request body", http.StatusBadRequest)
 		return
 	}
-
-	// Generate the shortened URL
-	newURL := RandString(shortURLsize)
-	res.WriteHeader(http.StatusCreated)
-	c.mapURL[newURL] = string(original)
+	// get the new id from the b flag
+	c.mapURL[config.UrlID] = string(original)
 
 	// Body answer: localhost:8080/{id}
-	res.Write([]byte(req.URL.Path + "/" + newURL))
+	res.Write([]byte(req.URL.Path + "/" + config.UrlID))
 }
 
 func checkURL(next http.Handler) http.Handler {
@@ -89,7 +87,9 @@ func LaunchMyRouter(c *Connection) chi.Router {
 
 func main() {
 	c := &Connection{mapURLmain}
-	err := http.ListenAndServe(`:8080`, LaunchMyRouter(c))
+	config.ParseFlags() // read a and b flags for host:port and {id} information
+
+	err := http.ListenAndServe(config.HostFlags.String(), LaunchMyRouter(c))
 	if err != nil {
 		panic(err)
 	}
