@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"regexp"
 	"strconv"
+
+	"github.com/caarlos0/env/v6"
 )
 
 type FlagRunAddr struct { // host:port for launching the server
-	Host string
-	Port int
+	Host string `env:"SERVER_ADDRESS_HOST"`
+	Port int    `env:"SERVER_ADDRESS_PORT"`
 }
 
 var HostFlags FlagRunAddr
@@ -36,6 +39,13 @@ func (f *FlagRunAddr) Set(s string) error {
 }
 
 func ParseFlags() {
+	var envErrHostFlags error
+
+	// Parse from the env variables first
+	envErrHostFlags = env.Parse(&HostFlags)
+	UrlID = os.Getenv("BASE_URL")
+
+	// If no success with env variables then parse from flags
 	flag.Var(&HostFlags, "a", "address and port to run server")
 	flag.Func("b", "shortened URL path", func(s string) error {
 		if !regexp.MustCompile(`[a-zA-Z0-9-]+$`).MatchString(s) {
@@ -45,5 +55,13 @@ func ParseFlags() {
 		return nil
 	})
 
-	flag.Parse()
+	if envErrHostFlags != nil || (HostFlags.Host == "" && HostFlags.Port == 0) {
+		log.Println("Error parsing host flags: ", envErrHostFlags)
+	}
+	if UrlID == "" {
+		log.Println("Error parsing url ID: ", UrlID)
+	}
+	if envErrHostFlags != nil || UrlID == "" {
+		flag.Parse()
+	}
 }

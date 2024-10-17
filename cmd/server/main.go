@@ -59,8 +59,9 @@ func (c *Connection) PostHandler(res http.ResponseWriter, req *http.Request) {
 	// get the new id from the b flag
 	c.mapURL[config.UrlID] = string(original)
 
+	res.WriteHeader(http.StatusCreated)
 	// Body answer: localhost:8080/{id}
-	res.Write([]byte(req.URL.Path + "/" + config.UrlID))
+	res.Write([]byte(req.URL.Path + config.UrlID))
 }
 
 func checkURL(next http.Handler) http.Handler {
