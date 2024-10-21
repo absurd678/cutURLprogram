@@ -33,12 +33,7 @@ func testRequest(opts testRequestOptions) *http.Response {
 	return resp
 }
 
-// Я знаю, ты не просил, но я вставлю 5 копеек, сори :D
-// Этот тест выглядит хорошо, но я бы разделил его на 2: Test_GetHandler, Test_PostHandler (Test_<funcname>)
-// Дело в том, что unit-тест тестирует 1 unit, то есть одну функцию, пусть даже и часть кода будет повторяться.
-// Челу, который будет это потом читать будет намного проще понять, какой функционал ты тестируешь и что ты имеешь ввиду)
-
-// Я бы сделал это как-то так:
+// Test the Get handler
 func Test_GetHandler(t *testing.T) {
 	tests := []struct {
 		Name         string
@@ -85,6 +80,7 @@ func Test_GetHandler(t *testing.T) {
 	}
 }
 
+// Test the Post handler
 func Test_PostHandler(t *testing.T) {
 	tests := []struct {
 		Name     string

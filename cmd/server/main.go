@@ -2,7 +2,6 @@ package main
 
 import (
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"regexp"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/absurd678/skill/cmd/config"
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
 )
 
 var mapURLmain = map[string]string{
@@ -19,11 +19,45 @@ var mapURLmain = map[string]string{
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
 const shortURLsize int = 10
 
-type Connection struct {
-	mapURL map[string]string
+// ----------------------STRUCTURES----------------------------
+type (
+	Connection struct {
+		mapURL map[string]string
+	}
+
+	responseData struct { // the field of logResponse
+		code int
+		size int
+	}
+
+	logResponse struct { // to log response data
+		res  http.ResponseWriter
+		data *responseData
+	}
+)
+
+// ----------------------logResponse-------------------------------
+func (lR *logResponse) Write(b []byte) (int, error) {
+	size, err := lR.res.Write(b)
+	if err != nil {
+		return 0, err
+	}
+	lR.data.size += size
+	return size, nil
 }
 
-// RandString генерирует случайную строку длины n
+func (lR *logResponse) WriteHeader(StatusCode int) {
+	lR.res.WriteHeader(StatusCode)
+	lR.data.code = StatusCode
+}
+
+func (lR *logResponse) Header() http.Header {
+	return lR.res.Header()
+}
+
+//-------------------------------------------------------------------
+
+// RandString generates a random string with the given length
 func RandString(n int) string {
 	// rand.Seed is deprecated, use NewSource instead :D
 	r := rand.New(rand.NewSource(time.Now().Unix()))
@@ -39,6 +73,7 @@ func (c *Connection) GetHandler(res http.ResponseWriter, req *http.Request) {
 	shortURL := chi.URLParam(req, "id")
 	original, ok := c.mapURL[shortURL]
 	if !ok {
+		res.WriteHeader(http.StatusBadRequest) // DOESN'T WORK to fill code field for logResponse
 		http.Error(res, "Invalid URL for get", http.StatusBadRequest)
 		return
 	}
@@ -53,6 +88,7 @@ func (c *Connection) PostHandler(res http.ResponseWriter, req *http.Request) {
 	// Get the URL from the body (and the new id also)
 	original, err := io.ReadAll(req.Body)
 	if err != nil {
+		res.WriteHeader(http.StatusBadRequest) // to fill code field for logResponse
 		http.Error(res, "Error reading request body", http.StatusBadRequest)
 		return
 	}
@@ -64,16 +100,37 @@ func (c *Connection) PostHandler(res http.ResponseWriter, req *http.Request) {
 	res.Write([]byte(req.URL.Path + config.UrlID))
 }
 
-func checkURL(next http.Handler) http.Handler {
+func checkURL(next http.Handler) http.Handler { // to avoid paths like localhost:8080/{id}/extrapath
+
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-		log.Println(req.URL.Path)
+		// Logging setup
+		middlewareLogger, err := zap.NewDevelopment()
+		if err != nil {
+			http.Error(res, "Logger error", http.StatusInternalServerError)
+		}
+		sugarLogger := middlewareLogger.Sugar() // for JSON-like messages
+		// Logging request
+		sugarLogger.Infow("Request parameters",
+			"URI", req.RequestURI,
+			"Method", req.Method,
+		)
+		// ResponseWriter implementation
+		logRW := logResponse{res, &responseData{code: 0, size: 0}}
+
+		// Handlers
 		if req.Method == http.MethodGet && regexp.MustCompile(`^/[a-zA-Z0-9-]+$`).MatchString(req.URL.Path) {
-			next.ServeHTTP(res, req)
+			next.ServeHTTP(&logRW, req)
 		} else if req.Method == http.MethodPost && req.URL.Path == "/" {
-			next.ServeHTTP(res, req)
+			next.ServeHTTP(&logRW, req)
 		} else {
 			http.Error(res, "Invalid URL", http.StatusBadRequest)
 		}
+		// Logging response
+		sugarLogger.Infow(
+			"Response parameters",
+			"Status Code", logRW.data.code,
+			"Size", logRW.data.size,
+		)
 	})
 }
 
