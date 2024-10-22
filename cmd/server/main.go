@@ -74,7 +74,7 @@ func (c *Connection) GetHandler(res http.ResponseWriter, req *http.Request) {
 	original, ok := c.mapURL[shortURL]
 	if !ok {
 		res.WriteHeader(http.StatusBadRequest) // DOESN'T WORK to fill code field for logResponse
-		http.Error(res, "Invalid URL for get", http.StatusBadRequest)
+		res.Write([]byte("Invalid URL for GET"))
 		return
 	}
 
@@ -85,11 +85,12 @@ func (c *Connection) GetHandler(res http.ResponseWriter, req *http.Request) {
 }
 
 func (c *Connection) PostHandler(res http.ResponseWriter, req *http.Request) {
+
 	// Get the URL from the body (and the new id also)
 	original, err := io.ReadAll(req.Body)
 	if err != nil {
 		res.WriteHeader(http.StatusBadRequest) // to fill code field for logResponse
-		http.Error(res, "Error reading request body", http.StatusBadRequest)
+		res.Write([]byte("Invalid URL for POST"))
 		return
 	}
 	// get the new id from the b flag
@@ -115,21 +116,25 @@ func checkURL(next http.Handler) http.Handler { // to avoid paths like localhost
 			"Method", req.Method,
 		)
 		// ResponseWriter implementation
-		logRW := logResponse{res, &responseData{code: 0, size: 0}}
+		logRW := &logResponse{res, &responseData{code: 0, size: 0}}
+		timeDuration := time.Now() // query duration
 
 		// Handlers
 		if req.Method == http.MethodGet && regexp.MustCompile(`^/[a-zA-Z0-9-]+$`).MatchString(req.URL.Path) {
-			next.ServeHTTP(&logRW, req)
+			next.ServeHTTP(logRW, req)
 		} else if req.Method == http.MethodPost && req.URL.Path == "/" {
-			next.ServeHTTP(&logRW, req)
+			next.ServeHTTP(logRW, req)
 		} else {
 			http.Error(res, "Invalid URL", http.StatusBadRequest)
+			logRW.WriteHeader(http.StatusBadRequest)
+			logRW.Write([]byte("Invalid URL"))
 		}
 		// Logging response
 		sugarLogger.Infow(
 			"Response parameters",
 			"Status Code", logRW.data.code,
 			"Size", logRW.data.size,
+			"Duration", time.Since(timeDuration),
 		)
 	})
 }
