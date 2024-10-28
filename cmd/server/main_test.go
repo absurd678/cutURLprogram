@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -74,8 +73,8 @@ func Test_GetHandler(t *testing.T) {
 				path:   tc.Path,
 				body:   nil,
 			})
-			assert.Equal(t, tc.WantCode, resp.StatusCode)
-			assert.Equal(t, tc.WantLocation, resp.Header.Get("Location"))
+			require.Equal(t, tc.WantCode, resp.StatusCode)
+			require.Equal(t, tc.WantLocation, resp.Header.Get("Location"))
 		})
 	}
 }
@@ -110,7 +109,7 @@ func Test_PostHandler(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.Name, func(t *testing.T) {
 			newBuffer := bytes.NewBuffer([]byte(tc.Body))
-			assert.NotEmpty(t, newBuffer) // original URL mustn't be empty
+			require.NotEmpty(t, newBuffer) // original URL mustn't be empty
 			testConnect := &Connection{tc.MapURL}
 			ts := httptest.NewServer(LaunchMyRouter(testConnect))
 			resp := testRequest(testRequestOptions{
@@ -120,7 +119,72 @@ func Test_PostHandler(t *testing.T) {
 				path:   tc.Path,
 				body:   newBuffer,
 			})
-			assert.Equal(t, tc.WantCode, resp.StatusCode)
+			require.Equal(t, tc.WantCode, resp.StatusCode)
+		})
+	}
+}
+
+// Test the JSON handler
+func TestPostHandlerJSON(t *testing.T) {
+	testBlock := []struct {
+		Name     string
+		MapURL   map[string]string // you can't use handler without content struct type so the map is needed :(
+		Path     string
+		Method   string
+		Body     string
+		WantCode int
+	}{
+		{
+			Name:     "Positive test 1",
+			MapURL:   map[string]string{},
+			Path:     "/api/shorten",
+			Method:   http.MethodPost,
+			Body:     `{"url": "https://ilovebebra.com"}`,
+			WantCode: http.StatusCreated,
+		},
+		{
+			Name:     "Negative test 1", // incorrect path
+			MapURL:   map[string]string{},
+			Path:     "/api/path",
+			Method:   http.MethodPost,
+			Body:     `{"url": "https://ilovebebra.com"}`,
+			WantCode: http.StatusBadRequest,
+		},
+		{
+			Name:     "Negative test 2", // incorrect method
+			MapURL:   map[string]string{},
+			Path:     "/api/shorten",
+			Method:   http.MethodPut,
+			Body:     `{"url": "https://ilovebebra.com"}`,
+			WantCode: http.StatusBadRequest,
+		},
+		{
+			Name:     "Negative test 3", // incorrect json
+			MapURL:   map[string]string{},
+			Path:     "/api/shorten",
+			Method:   http.MethodPost,
+			Body:     `<"url": "https://ilovebebra.com">`,
+			WantCode: http.StatusBadRequest,
+		},
+	}
+
+	for _, tc := range testBlock {
+		t.Run(tc.Name, func(t *testing.T) {
+			newConnect := &Connection{mapURL: tc.MapURL} // connect having optional map
+			newBody := bytes.NewBuffer([]byte(tc.Body))
+			require.NotEmpty(t, newBody) // body must json, not empty
+
+			ts := httptest.NewServer(LaunchMyRouter(newConnect))
+			resp := testRequest(
+				testRequestOptions{
+					t:      t,
+					ts:     ts,
+					method: tc.Method,
+					path:   tc.Path,
+					body:   newBody,
+				},
+			)
+			require.Equal(t, tc.WantCode, resp.StatusCode)
 		})
 	}
 }

@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 )
 
@@ -15,18 +13,8 @@ func main() {
 
 	// контейнер данных для запроса
 	data := url.Values{}
-	// приглашение в консоли
-	fmt.Println("Введите длинный URL")
-	// открываем потоковое чтение из консоли
-	reader := bufio.NewReader(os.Stdin)
-	// читаем строку из консоли
-	long, err := reader.ReadString('\n')
-	if err != nil {
-		panic(err)
-	}
-	long = strings.TrimSuffix(long, "\n")
 	// заполняем контейнер данными
-	data.Set("url", long)
+	data.Set("jsonFile", `{"url": "https://ilovespb.ru"}`)
 	// добавляем HTTP-клиент
 
 	client := &http.Client{}

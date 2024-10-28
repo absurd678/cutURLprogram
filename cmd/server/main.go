@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"math/rand"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/absurd678/skill/cmd/config"
+	"github.com/absurd678/skill/internal/models"
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
@@ -101,6 +103,27 @@ func (c *Connection) PostHandler(res http.ResponseWriter, req *http.Request) {
 	res.Write([]byte(req.URL.Path + config.UrlID))
 }
 
+func (c *Connection) PostHandlerJSON(res http.ResponseWriter, req *http.Request) {
+	var some_url models.SomeURL
+	var short_url models.ShortURL
+	var buff []byte
+	var err error
+
+	if err = json.NewDecoder(req.Body).Decode(&some_url); err != nil {
+		res.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	short_url = models.ShortURL{URL: config.UrlID}
+	c.mapURL[short_url.URL] = some_url.URL
+	res.WriteHeader(http.StatusCreated)
+	if buff, err = json.MarshalIndent(short_url, "", " "); err != nil {
+		res.WriteHeader(http.StatusBadRequest)
+		res.Write([]byte("Unmarshable data"))
+		return
+	}
+	res.Write(buff)
+}
+
 func checkURL(next http.Handler) http.Handler { // to avoid paths like localhost:8080/{id}/extrapath
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
@@ -124,6 +147,8 @@ func checkURL(next http.Handler) http.Handler { // to avoid paths like localhost
 			next.ServeHTTP(logRW, req)
 		} else if req.Method == http.MethodPost && req.URL.Path == "/" {
 			next.ServeHTTP(logRW, req)
+		} else if req.Method == http.MethodPost && req.URL.Path == "/api/shorten" {
+			next.ServeHTTP(logRW, req)
 		} else {
 			http.Error(res, "Invalid URL", http.StatusBadRequest)
 			logRW.WriteHeader(http.StatusBadRequest)
@@ -144,6 +169,7 @@ func LaunchMyRouter(c *Connection) chi.Router {
 	myRouter.Use(checkURL)
 	myRouter.Get("/{id}", c.GetHandler)
 	myRouter.Post("/", c.PostHandler)
+	myRouter.Post("/api/shorten", c.PostHandlerJSON)
 
 	return myRouter
 }
