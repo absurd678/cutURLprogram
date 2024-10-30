@@ -104,6 +104,8 @@ func (c *Connection) PostHandler(res http.ResponseWriter, req *http.Request) {
 }
 
 func (c *Connection) PostHandlerJSON(res http.ResponseWriter, req *http.Request) {
+	// get json: {"url": "some_url"}
+	// return json: {"result": "short_url"}
 	var some_url models.SomeURL
 	var short_url models.ShortURL
 	var buff []byte
@@ -175,7 +177,9 @@ func LaunchMyRouter(c *Connection) chi.Router {
 }
 
 func main() {
+
 	c := &Connection{mapURLmain}
+
 	config.ParseFlags() // read a and b flags for host:port and {id} information
 
 	err := http.ListenAndServe(config.HostFlags.String(), LaunchMyRouter(c))

@@ -9,16 +9,14 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/caarlos0/env/v6"
+	"github.com/joho/godotenv"
 )
 
+// -------------------FlagRunAddr--------------------------------
 type FlagRunAddr struct { // host:port for launching the server
 	Host string `env:"SERVER_ADDRESS_HOST"`
 	Port int    `env:"SERVER_ADDRESS_PORT"`
 }
-
-var HostFlags FlagRunAddr
-var UrlID string // {id} for shortening url in POST request
 
 func (f FlagRunAddr) String() string {
 	return net.JoinHostPort(f.Host, strconv.Itoa(f.Port))
@@ -38,11 +36,24 @@ func (f *FlagRunAddr) Set(s string) error {
 	return nil
 }
 
+// -------------------------------VARIABLES--------------------------------
+var HostFlags FlagRunAddr
+var UrlID string // {id} for shortening url in POST request
+
+// ----------------------------FUNCTIONS------------------------------------
 func ParseFlags() {
 	var envErrHostFlags error
+	var godotenvError error
 
 	// Parse from the env variables first
-	envErrHostFlags = env.Parse(&HostFlags)
+	godotenvError = godotenv.Load(`variables.env`)
+	if godotenvError != nil {
+		log.Fatalf("godotenv error: %s", godotenvError)
+	}
+	envErrHostFlags = HostFlags.Set(os.Getenv("SERVER_ADDRESS_HOST") + ":" + os.Getenv("SERVER_ADDRESS_PORT"))
+	if envErrHostFlags != nil {
+		log.Fatal("os.Getenv error")
+	}
 	UrlID = os.Getenv("BASE_URL")
 
 	// If no success with env variables then parse from flags
