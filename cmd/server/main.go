@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"io"
 	"math/rand"
@@ -27,34 +28,47 @@ type (
 		mapURL map[string]string
 	}
 
-	responseData struct { // the field of logResponse
+	// Logging
+	LogData struct { // the field of logResponse
 		code int
 		size int
 	}
 
-	logResponse struct { // to log response data
+	ResLogOrCompress struct { // to log response data
 		res  http.ResponseWriter
-		data *responseData
+		data *LogData
+		gz   *gzip.Writer // compress data
 	}
+	// Logging
+
 )
 
 // ----------------------logResponse-------------------------------
-func (lR *logResponse) Write(b []byte) (int, error) {
-	size, err := lR.res.Write(b)
+func (lc *ResLogOrCompress) Write(b []byte) (int, error) {
+
+	var size int
+	var err error
+
+	if lc.gz != nil { // if the compression initiated
+		size, err = lc.gz.Write(b) // compress first
+	} else {
+		size, err = lc.res.Write(b) // no compression
+	}
+
 	if err != nil {
 		return 0, err
 	}
-	lR.data.size += size
+	lc.data.size += size
 	return size, nil
 }
 
-func (lR *logResponse) WriteHeader(StatusCode int) {
-	lR.res.WriteHeader(StatusCode)
-	lR.data.code = StatusCode
+func (lc *ResLogOrCompress) WriteHeader(StatusCode int) {
+	lc.res.WriteHeader(StatusCode)
+	lc.data.code = StatusCode
 }
 
-func (lR *logResponse) Header() http.Header {
-	return lR.res.Header()
+func (lc *ResLogOrCompress) Header() http.Header {
+	return lc.res.Header()
 }
 
 //-------------------------------------------------------------------
@@ -141,7 +155,7 @@ func checkURL(next http.Handler) http.Handler { // to avoid paths like localhost
 			"Method", req.Method,
 		)
 		// ResponseWriter implementation
-		logRW := &logResponse{res, &responseData{code: 0, size: 0}}
+		logRW := &ResLogOrCompress{res, &LogData{code: 0, size: 0}}
 		timeDuration := time.Now() // query duration
 
 		// Handlers
