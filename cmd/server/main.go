@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/absurd678/skill/cmd/config"
@@ -41,6 +42,11 @@ type (
 	}
 	// Logging
 
+	// Decompress
+	Decompress struct {
+		rc io.ReadCloser
+		gz *gzip.Reader // decompress data
+	}
 )
 
 // ----------------------logResponse-------------------------------
@@ -71,7 +77,29 @@ func (lc *ResLogOrCompress) Header() http.Header {
 	return lc.res.Header()
 }
 
-//-------------------------------------------------------------------
+//-----------------------logResponse------------------------------
+
+// ------------------------Decompress-----------------------------
+func newDecompress(init_rc io.ReadCloser) (*Decompress, error) {
+	rd, err := gzip.NewReader(init_rc)
+	return &Decompress{
+		rc: init_rc,
+		gz: rd,
+	}, err
+}
+
+func (d *Decompress) Read(p []byte) (int, error) {
+	return d.gz.Read(p)
+}
+
+func (d *Decompress) Close() error {
+	if err := d.rc.Close(); err != nil {
+		return err
+	}
+	return d.gz.Close()
+}
+
+// ------------------------Decompress-----------------------------
 
 // RandString generates a random string with the given length
 func RandString(n int) string {
@@ -84,8 +112,9 @@ func RandString(n int) string {
 	return string(b)
 }
 
+// ------------------------Connection-----------------------------
 func (c *Connection) GetHandler(res http.ResponseWriter, req *http.Request) {
-	// take {id} and search for value in the map
+	// take /{id} and search for value in the map
 	shortURL := chi.URLParam(req, "id")
 	original, ok := c.mapURL[shortURL]
 	if !ok {
@@ -101,8 +130,7 @@ func (c *Connection) GetHandler(res http.ResponseWriter, req *http.Request) {
 }
 
 func (c *Connection) PostHandler(res http.ResponseWriter, req *http.Request) {
-
-	// Get the URL from the body (and the new id also)
+	// Get the URL from the body (and the new id also) like this: localhost:8080 -d https://example
 	original, err := io.ReadAll(req.Body)
 	if err != nil {
 		res.WriteHeader(http.StatusBadRequest) // to fill code field for logResponse
@@ -140,9 +168,17 @@ func (c *Connection) PostHandlerJSON(res http.ResponseWriter, req *http.Request)
 	res.Write(buff)
 }
 
+// ------------------------Connection-----------------------------
+
 func checkURL(next http.Handler) http.Handler { // to avoid paths like localhost:8080/{id}/extrapath
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+
+		// compression variables
+
+		var wgzip *gzip.Writer
+		var rgzip *Decompress
+
 		// Logging setup
 		middlewareLogger, err := zap.NewDevelopment()
 		if err != nil {
@@ -154,8 +190,35 @@ func checkURL(next http.Handler) http.Handler { // to avoid paths like localhost
 			"URI", req.RequestURI,
 			"Method", req.Method,
 		)
+
+		// Check Accept-Encoding
+		if strings.Contains(req.Header.Get("Accept-Encoding"), "gzip") {
+			var err error
+			wgzip, err = gzip.NewWriterLevel(res, gzip.BestSpeed)
+			res.Header().Set("Content-Encoding", "gzip")
+
+			if err != nil {
+				sugarLogger.Error("Error creating gzip writer")
+				http.Error(res, "Error creating gzip writer", http.StatusInternalServerError)
+				return
+			}
+			defer wgzip.Close() // Send all the data!
+		}
+
+		// !Check Content-Encoding
+		if strings.Contains(req.Header.Get("Content-Encoding"), "gzip") {
+			rgzip, err = newDecompress(req.Body)
+			if err != nil {
+				sugarLogger.Error("Error creating gzip reader")
+				http.Error(res, "Error creating gzip reader", http.StatusInternalServerError)
+				return
+			}
+			req.Body = rgzip
+			defer rgzip.Close()
+		}
+
 		// ResponseWriter implementation
-		logRW := &ResLogOrCompress{res, &LogData{code: 0, size: 0}}
+		logRW := &ResLogOrCompress{res, &LogData{code: 0, size: 0}, wgzip}
 		timeDuration := time.Now() // query duration
 
 		// Handlers
@@ -170,6 +233,7 @@ func checkURL(next http.Handler) http.Handler { // to avoid paths like localhost
 			logRW.WriteHeader(http.StatusBadRequest)
 			logRW.Write([]byte("Invalid URL"))
 		}
+
 		// Logging response
 		sugarLogger.Infow(
 			"Response parameters",
